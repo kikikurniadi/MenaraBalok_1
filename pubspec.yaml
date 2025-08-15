@@ -1,0 +1,26 @@
+name: stacker_game
+description: "Stacker Game adalah permainan arkade sederhana di mana pemain harus menumpuk balok setinggi mungkin. Uji refleks dan presisi Anda dalam permainan yang adiktif dan menantang ini!"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  flame: ^1.30.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+  flame_test: ^2.0.1
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/icon.png
