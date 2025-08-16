@@ -1,26 +1,37 @@
-name: stacker_game
-description: "Stacker Game adalah permainan arkade sederhana di mana pemain harus menumpuk balok setinggi mungkin. Uji refleks dan presisi Anda dalam permainan yang adiktif dan menantang ini!"
+name: menara_balok
+description: A casual block stacking game built with Flutter and Flame.
+publish_to: 'none' 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.8.1
+  sdk: '>=2.18.2 <3.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-
-  cupertino_icons: ^1.0.8
-  flame: ^1.30.1
+  flame: ^1.3.0
+  flame_audio: ^1.3.2
+  flutter_riverpod: ^2.0.2
+  go_router: ^5.1.0
+  google_fonts: ^3.0.1
+  shared_preferences: ^2.0.15
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.10.0
 
-  flutter_lints: ^5.0.0
-  flame_test: ^2.0.1
-  flutter_launcher_icons: ^0.14.4
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
 
 flutter:
   uses-material-design: true
   assets:
-    - assets/icon/icon.png
+    - assets/audio/
+  fonts:
+    - family: PressStart2P
+      fonts:
+        - asset: assets/fonts/PressStart2P-Regular.ttf

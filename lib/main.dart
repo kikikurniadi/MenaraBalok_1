@@ -1,196 +1,149 @@
+// Copyright 2022 The Flutter Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-import 'dart:math';
+import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart';
-import 'package:flame/game.dart';
-import 'package:flame/components.dart';
-import 'package:flame/events.dart';
-import 'package:meta/meta.dart';
-
-// Variabel global untuk tema dan ukuran
-const Color kBackgroundColor = Color(0xFF2C3E50);
-const Color kPlayerColor = Color(0xFFE74C3C);
-const Color kBlockColor = Color(0xFF3498DB);
-const double kBlockHeight = 30.0;
-const double kInitialBlockWidth = 200.0;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:menara_balok/src/core/navigation/app_router.dart';
+import 'package:menara_balok/src/core/services/audio_service.dart';
+import 'package:menara_balok/src/core/services/persistence_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  runApp(
-    GameWidget(
-      game: StackerGame(),
-    ),
-  );
+  // Ensure that Flutter bindings are initialized before any Flutter code is executed.
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const AppBootstrap());
 }
 
-// Enum untuk Status Game
-enum GameState { playing, gameOver }
+/// A helper class to manage the asynchronous initialization of the app.
+class AppInitialization {
+  static Future<ProviderContainer> initialize() async {
+    // 1. Initialize SharedPreferences for persistence.
+    final prefs = await SharedPreferences.getInstance();
 
-class StackerGame extends FlameGame with TapCallbacks {
-  late TextComponent scoreText;
-  late TextComponent gameOverText;
+    // 2. Initialize the audio engine.
+    await FlameAudio.bgm.initialize();
 
-  GameState gameState = GameState.playing;
-  int score = 0;
-  
-  double _currentBlockWidth = kInitialBlockWidth;
-  
-  final List<RectangleComponent> _stackedBlocks = [];
-  RectangleComponent? _movingBlock;
-  double _blockSpeed = 200.0;
+    // 3. Create a Riverpod container and override the sharedPreferencesProvider
+    // with the instance we just initialized.
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+    );
+
+    // 4. Preload all audio assets into the cache for immediate playback.
+    await container.read(audioServiceProvider).preloadAssets();
+
+    // 5. Return the fully initialized container.
+    return container;
+  }
+}
+
+/// The root widget of the application that handles the bootstrap process.
+/// It displays a loading screen while async services are initializing.
+class AppBootstrap extends StatefulWidget {
+  const AppBootstrap({super.key});
 
   @override
-  Future<void> onLoad() async {
-    super.onLoad();
+  State<AppBootstrap> createState() => _AppBootstrapState();
+}
 
-    camera.viewfinder.anchor = Anchor.topCenter;
-    camera.viewfinder.position = Vector2(size.x / 2, 0);
+class _AppBootstrapState extends State<AppBootstrap> {
+  late final Future<ProviderContainer> _initializationFuture;
 
-    add(RectangleComponent(
-      size: size,
-      paint: Paint()..color = kBackgroundColor,
-    ));
+  @override
+  void initState() {
+    super.initState();
+    _initializationFuture = AppInitialization.initialize();
+  }
 
-    scoreText = TextComponent(
-      text: 'Score: 0',
-      position: Vector2(20, 20),
-      anchor: Anchor.topLeft,
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<ProviderContainer>(
+      future: _initializationFuture,
+      builder: (context, snapshot) {
+        // If the future is complete and has data, build the main app.
+        if (snapshot.connectionState == ConnectionState.done) {
+          if (snapshot.hasData) {
+            // Provide the initialized container to the rest of the app.
+            return UncontrolledProviderScope(
+              container: snapshot.data!,
+              child: const MyApp(),
+            );
+          } else if (snapshot.hasError) {
+            // If initialization fails, show an error screen.
+            return _buildErrorScreen(snapshot.error);
+          }
+        }
+        
+        // While initializing, show a loading screen.
+        return _buildLoadingScreen();
+      },
     );
-    add(scoreText);
+  }
 
-    gameOverText = TextComponent(
-      text: 'GAME OVER\nTap to Restart',
-      position: size / 2,
-      anchor: Anchor.center,
-      textRenderer: TextPaint(
-        style: const TextStyle(fontSize: 48, color: Colors.white, fontWeight: FontWeight.bold),
+  /// Builds a simple loading screen with a centered progress indicator.
+  Widget _buildLoadingScreen() {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
       ),
     );
-
-    startGame();
   }
 
-  void startGame() {
-    gameState = GameState.playing;
-    score = 0;
-    _currentBlockWidth = kInitialBlockWidth;
-    
-    // Hapus semua balok yang ada sebelum memulai game baru
-    _stackedBlocks.forEach(remove);
-    _stackedBlocks.clear();
-    
-    if (_movingBlock != null) {
-      remove(_movingBlock!);
-      _movingBlock = null;
-    }
-
-    if (gameOverText.isMounted) {
-      remove(gameOverText);
-    }
-    
-    scoreText.text = 'Score: 0';
-    camera.viewfinder.position = Vector2(size.x / 2, size.y * 0.1);
-
-    final baseBlock = RectangleComponent(
-      size: Vector2(kInitialBlockWidth, kBlockHeight),
-      position: Vector2(size.x / 2, size.y * 0.8),
-      anchor: Anchor.center,
-      paint: Paint()..color = kPlayerColor,
+  /// Builds an error screen to display initialization failures.
+  Widget _buildErrorScreen(Object? error) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Colors.red[900],
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Failed to initialize the app.\nError: $error',
+              style: const TextStyle(color: Colors.white),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
     );
-    _stackedBlocks.add(baseBlock);
-    add(baseBlock);
-
-    _spawnMovingBlock();
   }
+}
 
-  void _spawnMovingBlock() {
-    final startX = Random().nextBool() ? 0.0 : size.x - _currentBlockWidth;
-    _blockSpeed = (startX == 0.0) ? 200.0 : -200.0;
-
-    _movingBlock = RectangleComponent(
-      size: Vector2(_currentBlockWidth, kBlockHeight),
-      position: Vector2(startX, _stackedBlocks.last.position.y - kBlockHeight),
-      paint: Paint()..color = kBlockColor,
-      key: ComponentKey.named('movingBlock'),
-    );
-    add(_movingBlock!);
-  }
+/// The main application widget, which is built only after all
+/// services have been successfully initialized.
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
-  void update(double dt) {
-    super.update(dt);
-
-    if (gameState == GameState.playing && _movingBlock != null) {
-      _movingBlock!.position.x += _blockSpeed * dt;
-
-      if (_movingBlock!.position.x < 0) {
-        _movingBlock!.position.x = 0;
-        _blockSpeed *= -1;
-      }
-      if (_movingBlock!.position.x + _currentBlockWidth > size.x) {
-          _movingBlock!.position.x = size.x - _currentBlockWidth;
-          _blockSpeed *= -1;
-      }
-    }
-  }
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    super.onTapDown(event);
-
-    if (gameState == GameState.playing) {
-      _placeBlock();
-    } else {
-      startGame();
-    }
-  }
-
-  void _placeBlock() {
-    if (_movingBlock == null) return;
-
-    final lastBlock = _stackedBlocks.last;
-    final movingBlock = _movingBlock!;
-
-    final lastBlockLeft = lastBlock.position.x - (lastBlock.size.x * lastBlock.anchor.x);
-    final lastBlockRight = lastBlockLeft + lastBlock.size.x;
-    final movingBlockLeft = movingBlock.position.x;
-    final movingBlockRight = movingBlockLeft + movingBlock.size.x;
-
-    final double overlapStart = max(lastBlockLeft, movingBlockLeft);
-    final double overlapEnd = min(lastBlockRight, movingBlockRight);
-    final double overlapWidth = overlapEnd - overlapStart;
-
-    if (overlapWidth > 0) {
-      _currentBlockWidth = overlapWidth;
-
-      final placedBlock = RectangleComponent(
-        size: Vector2(_currentBlockWidth, kBlockHeight),
-        position: Vector2(overlapStart, movingBlock.position.y),
-        paint: Paint()..color = kPlayerColor,
-      );
-      
-      remove(movingBlock);
-      add(placedBlock);
-      _stackedBlocks.add(placedBlock);
-      
-      score++;
-      scoreText.text = 'Score: $score';
-
-      camera.moveBy(Vector2(0, -kBlockHeight), speed: 150);
-      _spawnMovingBlock();
-
-    } else {
-      endGame();
-    }
-  }
-
-  @visibleForTesting
-  void endGame() {
-    gameState = GameState.gameOver;
-
-    if (_movingBlock != null && _movingBlock!.isMounted) {
-      remove(_movingBlock!);
-      _movingBlock = null;
-    }
-    
-    add(gameOverText);
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Menara Balok',
+      debugShowCheckedModeBanner: false,
+      routerConfig: appRouter,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: Colors.black,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blueAccent,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        // Fallback to a default TextTheme if GoogleFonts fails
+        textTheme: (GoogleFonts.pressStart2pTextTheme() ?? const TextTheme()).apply(
+          bodyColor: Colors.white,
+          displayColor: Colors.white,
+        ),
+      ),
+    );
   }
 }
